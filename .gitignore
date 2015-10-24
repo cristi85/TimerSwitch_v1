@@ -1,3 +1,9 @@
+# Build files
+*.o
+*.ls
+*.sm8
+tags*.txt
+
 # Windows image file caches
 Thumbs.db
 ehthumbs.db
