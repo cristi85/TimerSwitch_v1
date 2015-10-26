@@ -39,7 +39,6 @@ extern u8 BTN1_DEB_STATE;
 extern _Bool BTN1_DELAY_FLAG;
 extern u16 BTN1_press_timer;
 
-extern _Bool FLAG_500ms;
 extern _Bool FLAG_1000ms;
 
 extern u8 blink_redLED_times;
@@ -51,21 +50,7 @@ extern _Bool flag_blink_redLED;
 extern _Bool flag_blink_greenLED;
 extern _Bool flag_blink_unlimited;
 
-#define RFSEND_DATALEN  (u8)5
-typedef union
-{
-  struct
-  {
-    u16 RFsyncValue;
-    u8  RFNodeId;
-    u8  RFcmd;
-    u8  RFmsgCHKSUM;
-  }RFmsgmember;
-  u8 RFmsgarray[RFSEND_DATALEN];
-}RFmsg_t;
 /* Exported variables */
-extern RFmsg_t RcvRFmsg;
-extern u8 RFbytesReady;
 /* Exported constants --------------------------------------------------------*/
 /* Exported macro ------------------------------------------------------------*/
 /* Exported functions ------------------------------------------------------- */
