@@ -71,8 +71,8 @@
     #define HBRIDGE_OFF   {PMOS_L_HIGH; PMOS_R_HIGH; NMOS_L_LOW; NMOS_R_LOW;}
     #define HBRIDGE_OPENR {PMOS_L_LOW; NMOS_R_HIGH;} 
     #define HBRIDGE_OPENL {PMOS_R_LOW; NMOS_L_HIGH;}
-    #define LIGHT_ON      HBRIDGE_OPENL
-    #define LIGHT_OFF     HBRIDGE_OPENR
+    #define LOAD_ON       HBRIDGE_OPENL
+    #define LOAD_OFF      HBRIDGE_OPENR
   #else  /* #if HWVERSION ==  */
     #error "No valid hardware version defined! Please define HWVERSION with a valid version"
   #endif
