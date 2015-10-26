@@ -34,9 +34,6 @@
   * @{
   */
 /* Periodic Tasks */
-#define CNTVAL_500MS  (u16)500
-_Bool FLAG_500ms = FALSE;
-u16 cnt_flag_500ms = 0;
 #define CNTVAL_1000MS (u16)1000
 _Bool FLAG_1000ms = FALSE;
 u16 cnt_flag_1000ms = 0;
@@ -125,16 +122,9 @@ INTERRUPT_HANDLER(TIM4_UPD_OVF_IRQHandler, 25)
        it is recommended to set a breakpoint on the following instruction.
     */
   RTMS_MEASURE_START(runtime_it_1ms);
-  interrupt_status = 1;
   if((u8)(TIM4->SR1 & (u8)TIM4_IT_Update))  //1ms
   {
     /* ===== CKECK PERIODIC TASKS FLAGS ===== */
-    /*if(cnt_flag_500ms < U16_MAX) cnt_flag_500ms++;
-    if(cnt_flag_500ms >= CNTVAL_500MS) 
-    {
-      cnt_flag_500ms = 0;
-      FLAG_500ms = TRUE;
-    }*/
     if(cnt_flag_1000ms < U16_MAX) cnt_flag_1000ms++;
     if(cnt_flag_1000ms >= CNTVAL_1000MS) 
     {
@@ -152,11 +142,11 @@ INTERRUPT_HANDLER(TIM4_UPD_OVF_IRQHandler, 25)
       Timeout_toutcnt2++;
       if(Timeout_toutcnt2 >= Timeout_tout2) Timeout_istout2 = TRUE;
     }
-    if(!Timeout_istout3)
+    /*if(!Timeout_istout3)
     {
       Timeout_toutcnt3++;
       if(Timeout_toutcnt3 >= Timeout_tout3) Timeout_istout3 = TRUE;
-    }
+    }*/
     /* ========== DEBOUNCE INPUTS ========== 1MS */
     /* Debounce BTN1 */
     if(!BTN1_STATE)
@@ -262,7 +252,6 @@ INTERRUPT_HANDLER(TIM4_UPD_OVF_IRQHandler, 25)
     /* ======================================= */
     TIM4->SR1 = (u8)(~(u8)TIM4_IT_Update);       // clear TIM4 update interrupt flag
   }
-  interrupt_status = 0;
   RTMS_MEASURE_STOP(runtime_it_1ms);
 }
 
