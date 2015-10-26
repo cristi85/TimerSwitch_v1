@@ -63,7 +63,7 @@ volatile u8 debug = 0;
 
 /* LED Blink */
 #define LEDBLINK_ONTIME  (u16)50
-#define LEDBLINK_OFFTIME (u16)200
+#define LEDBLINK_OFFTIME (u16)350
 u16 cnt_state_redLED = 0;
 u16 cnt_state_greenLED = 0;
 u8 cnt_blink_redLED = 0;
@@ -142,19 +142,17 @@ INTERRUPT_HANDLER(TIM4_UPD_OVF_IRQHandler, 25)
       Timeout_toutcnt2++;
       if(Timeout_toutcnt2 >= Timeout_tout2) Timeout_istout2 = TRUE;
     }
-    /*if(!Timeout_istout3)
-    {
-      Timeout_toutcnt3++;
-      if(Timeout_toutcnt3 >= Timeout_tout3) Timeout_istout3 = TRUE;
-    }*/
     /* ========== DEBOUNCE INPUTS ========== 1MS */
     /* Debounce BTN1 */
-    if(!BTN1_STATE)
+    if(BTN1_STATE)
     {
       if(btn1_0_cnt < U8_MAX) btn1_0_cnt++;
       btn1_1_cnt = 0;
       if(btn1_0_cnt >= DIG_IN_DEB_TIME)
       {
+        if(BTN1_DEB_STATE == BTN_DEPRESSED) {
+          BTN1_press_timer = 0;
+        }
         BTN1_DEB_STATE = BTN_PRESSED;
       }
     }
@@ -165,7 +163,6 @@ INTERRUPT_HANDLER(TIM4_UPD_OVF_IRQHandler, 25)
       if(btn1_1_cnt >= DIG_IN_DEB_TIME)
       {
         BTN1_DEB_STATE = BTN_DEPRESSED;
-        //BTN1_press_timer = 0;
       }
     }
    

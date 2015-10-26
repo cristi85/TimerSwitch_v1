@@ -35,9 +35,9 @@
   */
 
 /* Private define ------------------------------------------------------------*/
-#define LOAD_ON                    (u8)1
-#define LOAD_OFF                   (u8)0
-#define BLINK_REDLED(x)            {blink_redLED_times=(u8)x;   ((x==255)?(flag_blink_unlimited=TRUE):(flag_blink_unlimited=FALSE)); flag_blink_on_off=TRUE; cnt_state_redLED=0; LED_RED_ON; flag_blink_redLED=TRUE;}
+#define LOAD_POWERED                (u8)1
+#define LOAD_NOT_POWERED            (u8)0
+#define BLINK_REDLED(x)             {blink_redLED_times=(u8)x;   ((x==255)?(flag_blink_unlimited=TRUE):(flag_blink_unlimited=FALSE)); flag_blink_on_off=TRUE; cnt_state_redLED=0; LED_RED_ON; flag_blink_redLED=TRUE;}
 #define BLINK_GREENLED(x)           {blink_greenLED_times=(u8)x; ((x==255)?(flag_blink_unlimited=TRUE):(flag_blink_unlimited=FALSE)); flag_blink_on_off=TRUE; cnt_state_greenLED=0; LED_GREEN_ON; flag_blink_greenLED=TRUE;}
 #define BLINKSTOP_REDLED            {flag_blink_redLED=FALSE; LED_OFF;}
 #define BLINKSTOP_GREENLED          {flag_blink_greenLED=FALSE; LED_OFF;}
@@ -46,25 +46,25 @@
 #define HBRIDGE_CHARGE_TIME         (u16)1000  /* minimum H-Bridge capacitor charge time [ms] */
 #define HBRIDGE_ON_TIME             (u8)100    /* H-Bridge conduction time [ms] */
 #define BTN1_SET_NEW_TIME           (u16)3000  /* 3000ms */
-#define TIMER_VAL_DEFAULT           (u16)300   /* 300 seconds */
+#define TIMER_VAL_DEFAULT           (u16)10   /* 300 seconds */
 #define TIMER_VAL_PROGRAMMING_START (u16)1     /* 1 minute */
+#define READROM_U16(rom_adr)        (u16)(*((u16*)(rom_adr)))
 
 /* Private typedef -----------------------------------------------------------*/
 typedef enum States 
 {
   ST_INIT               = 0,
   ST_WAIT_INPUT         = 1,
-  ST_SWITCH_LOAD_ON     = 2,
-  ST_SWITCH_LOAD_OFF    = 3,
-  ST_WAIT_CAP_CHARGE    = 4,
-  ST_WAIT_HBRIDGE_ON    = 5,
-  ST_PROGRAMMING_MODE   = 6
+  ST_SWITCH_LOAD        = 2,
+  ST_WAIT_CAP_CHARGE    = 3,
+  ST_WAIT_HBRIDGE_ON    = 4,
+  ST_PROGRAMMING_MODE   = 5
 } StatesType;
 
 /* Private macro -------------------------------------------------------------*/
 /* Private variables ---------------------------------------------------------*/
-static u8 LoadStateRequest = LOAD_OFF;
-static u8 LoadState = LOAD_OFF;
+static u8 LoadStateRequest = LOAD_NOT_POWERED;
+static u8 LoadState = LOAD_NOT_POWERED;
 static _Bool FLAG_BTN1_lock = FALSE;
 static _Bool FLAG_reset_LEDblink_error = FALSE;
 static _Bool FLAG_programming_mode = FALSE;
@@ -79,6 +79,7 @@ static const u16 timer_val_stored = TIMER_VAL_DEFAULT;
 /* Private functions ---------------------------------------------------------*/
 void BTN1_Released(void);
 
+void Program_Timer_Value(void);
 // RUNTIME MEASUREMENT
 RTMS_DECLARE(runtime_it_1ms);
 /**
@@ -88,13 +89,13 @@ RTMS_DECLARE(runtime_it_1ms);
   */
 void main(void)
 {
+  u16 tmp_adr;
   disableInterrupts();
   Config();
   Errors_Init();
   RTMS_INIT(runtime_it_1ms);
   enableInterrupts();
   LED_GREEN_ON;
-  LED_RED_ON;
   /* Wait for power supply settling */
   Timeout_SetTimeout2(200);
   while(!Timeout_IsTimeout2());
@@ -107,6 +108,12 @@ void main(void)
   }
   RST_ClearFlag(RST_FLAG_POR_PDR | RST_FLAG_SWIMF | RST_FLAG_ILLOPF | RST_FLAG_IWDGF);
   while(ISBLINKING_REDLED);
+  HBRIDGE_OFF;
+  Timeout_SetTimeout1(HBRIDGE_CHARGE_TIME);
+  while(!Timeout_IsTimeout1());
+  LOAD_OFF;
+  Timeout_SetTimeout1(HBRIDGE_ON_TIME);
+  while(!Timeout_IsTimeout1());
   HBRIDGE_OFF;
   Timeout_SetTimeout1(HBRIDGE_CHARGE_TIME);
   
@@ -127,6 +134,7 @@ void main(void)
       }
       case ST_WAIT_INPUT:
       {
+        
         /* ============== PRESS BTN1 with key repetition lock ================= */
         if(BTN1_DEB_STATE == BTN_PRESSED && !FLAG_BTN1_lock)
         {
@@ -138,11 +146,12 @@ void main(void)
           BTN1_Released();
         }
         /* ============== END PRESS BTN1 with key repetition lock ================= */
-        if(timer_cnt_seconds >= *((u16*)(&timer_val_stored)))
+        tmp_adr = (u16)&timer_val_stored;
+        if( timer_cnt_seconds >= READROM_U16(tmp_adr) )
         {
           FLAG_timer_on = FALSE;
           timer_cnt_seconds = 0;
-          LoadStateRequest = LOAD_OFF;
+          LoadStateRequest = LOAD_NOT_POWERED;
           state = ST_WAIT_CAP_CHARGE;
         }
         break;
@@ -151,18 +160,18 @@ void main(void)
       {
         switch(LoadStateRequest)
         {
-          case LOAD_OFF:
+          case LOAD_NOT_POWERED:
           {
-            LED_GREEN_OFF;
+            LED_OFF;
             LOAD_OFF;
-            LoadState = LOAD_OFF;
+            LoadState = LOAD_NOT_POWERED;
             break;
           }
-          case LOAD_ON:
+          case LOAD_POWERED:
           {
             LED_GREEN_ON;
             LOAD_ON;
-            LoadState = LOAD_ON;
+            LoadState = LOAD_POWERED;
             FLAG_timer_on = TRUE;
             timer_cnt_seconds = 0;
             break;
@@ -188,7 +197,6 @@ void main(void)
           HBRIDGE_OFF;
           /* set timeout for H-Bridge capacitor to charge */
           Timeout_SetTimeout1(HBRIDGE_CHARGE_TIME);
-          BLINKSTOP_GREENLED;
           state = ST_WAIT_INPUT;
         }
         break;
@@ -214,11 +222,11 @@ void main(void)
         {
           if(!ISBLINKING_REDLED) {
             if(timer_value < 10) {
-              Timeout_SetTimeout2(1000);
+              Timeout_SetTimeout2(1100);
               programming_mode_step = 5;
             }
             else if(timer_value < 100) {
-              Timeout_SetTimeout2(300);
+              Timeout_SetTimeout2(650);
               programming_mode_step = 2;
             }
           }
@@ -286,7 +294,7 @@ void BTN1_Released()
       if(timer_value < 99) timer_value++;
     }
     else {
-      LoadStateRequest = LOAD_ON;
+      LoadStateRequest = LOAD_POWERED;
       state = ST_WAIT_CAP_CHARGE;
     }
   }
@@ -301,17 +309,18 @@ void BTN1_Released()
       timer_value = TIMER_VAL_PROGRAMMING_START;
     }
   }
-  BTN1_press_timer = 0;
 }
 
 void Program_Timer_Value()
 {
+  u16 tmp_adr;
   FLASH_Unlock(FLASH_MemType_Program);
-  FLASH_ProgramByte((u16)(u8*)(&timer_val_stored), (u8)(timer_value >> 8);
-  FLASH_ProgramByte((u16)(u8*)(&Receivers.NumLrndRcv), (u8)(timer_value & (u16)0x00FF));
+  FLASH_ProgramByte( (u16)(&timer_val_stored)+0, (u8)(timer_value >> 8) );
+  FLASH_ProgramByte( (u16)(&timer_val_stored)+1, (u8)(timer_value & (u16)0x00FF) );
   FLASH_Lock(FLASH_MemType_Program);
   /* Check what was written */
-  if( timer_value != *((u16*)(&timer_val_stored)) )
+  tmp_adr = (u16)&timer_val_stored;
+  if( timer_value != READROM_U16(tmp_adr) )
   {
     Errors_SetError(ERROR_FLASH_WRITE);
   }
