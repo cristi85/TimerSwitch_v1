@@ -46,9 +46,10 @@
 #define HBRIDGE_CHARGE_TIME         (u16)1000  /* minimum H-Bridge capacitor charge time [ms] */
 #define HBRIDGE_ON_TIME             (u8)100    /* H-Bridge conduction time [ms] */
 #define BTN1_SET_NEW_TIME           (u16)3000  /* 3000ms */
-#define TIMER_VAL_DEFAULT           (u16)10   /* 300 seconds */
+#define TIMER_VAL_DEFAULT           (u16)600   /* 600 seconds - 10min*/
 #define TIMER_VAL_PROGRAMMING_START (u16)1     /* 1 minute */
 #define READROM_U16(rom_adr)        (u16)(*((u16*)(rom_adr)))
+#define ROM_LOCATIONS_TIMER         (u8)10
 
 /* Private typedef -----------------------------------------------------------*/
 typedef enum States 
@@ -74,7 +75,9 @@ static u8 task_1000ms_cnt = 0;
 static u16 timer_cnt_seconds = 0;
 static _Bool FLAG_timer_on = FALSE;
 static u16 timer_value = TIMER_VAL_PROGRAMMING_START;
-static const u16 timer_val_stored = TIMER_VAL_DEFAULT;
+static const u16 timer_val_stored[ROM_LOCATIONS_TIMER] = {TIMER_VAL_DEFAULT, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static const u16 timer_val_stored_default = TIMER_VAL_DEFAULT;
+static u8 ROM_location_timer_idx = 0;
 /* Private function prototypes -----------------------------------------------*/
 /* Private functions ---------------------------------------------------------*/
 void BTN1_Released(void);
@@ -89,6 +92,7 @@ RTMS_DECLARE(runtime_it_1ms);
   */
 void main(void)
 {
+  u8 i, cnt;
   u16 tmp_adr;
   disableInterrupts();
   Config();
@@ -110,6 +114,39 @@ void main(void)
   while(ISBLINKING_REDLED);
   HBRIDGE_OFF;
   Timeout_SetTimeout1(HBRIDGE_CHARGE_TIME);
+  /* Retrieve Timer Stored value index */
+  cnt = 0;
+  for(i=0; i<ROM_LOCATIONS_TIMER; i++) {
+    tmp_adr = (u16)&(timer_val_stored[i]);
+    if(READROM_U16(tmp_adr)) {
+      ROM_location_timer_idx = i;
+      cnt++;
+      break;
+    }
+  }
+  if(cnt != 1) {
+    // timer_val_stored corrupt, all 0 values or more than one value != 0 were read
+    tmp_adr = (u16)&(timer_val_stored[0]);
+    FLASH_Unlock(FLASH_MemType_Program);
+    FLASH_ProgramByte((u16)(tmp_adr)+0, (u8)(TIMER_VAL_DEFAULT >> 8));
+    FLASH_ProgramByte((u16)(tmp_adr)+1, (u8)(TIMER_VAL_DEFAULT & (u16)0x00FF));
+    if(READROM_U16(tmp_adr) != TIMER_VAL_DEFAULT) {
+      Errors_SetError(ERROR_FLASH_WRITE);
+    }
+    for(i=1; i<ROM_LOCATIONS_TIMER; i++) {
+      tmp_adr = (u16)&(timer_val_stored[i]);
+      FLASH_ProgramByte((u16)(tmp_adr)+0, (u8)0x00);
+      FLASH_ProgramByte((u16)(tmp_adr)+1, (u8)0x00);
+      if(READROM_U16(tmp_adr) != 0) {
+        Errors_SetError(ERROR_FLASH_WRITE);
+      }
+    }
+    FLASH_Lock(FLASH_MemType_Program);
+    ROM_location_timer_idx = 0;
+    BLINK_GREENLED(5);
+    while(ISBLINKING_GREENLED);
+  }
+  /* END Retrieve Timer Stored value index */
   while(!Timeout_IsTimeout1());
   LOAD_OFF;
   Timeout_SetTimeout1(HBRIDGE_ON_TIME);
@@ -146,7 +183,13 @@ void main(void)
           BTN1_Released();
         }
         /* ============== END PRESS BTN1 with key repetition lock ================= */
-        tmp_adr = (u16)&timer_val_stored;
+        
+        if(!Errors_CheckError(ERROR_FLASH_WRITE)) {
+          tmp_adr = (u16)&(timer_val_stored[ROM_location_timer_idx]);
+        }
+        else {
+          tmp_adr = (u16)&(timer_val_stored_default);
+        }
         if( timer_cnt_seconds >= READROM_U16(tmp_adr) )
         {
           FLAG_timer_on = FALSE;
@@ -241,14 +284,15 @@ void main(void)
         }
         case 3:
         {
-          BLINK_REDLED(timer_value % 10);
+          if(timer_value % 10) BLINK_REDLED(timer_value % 10);  // remainder is different than 0
+          else BLINK_REDLED(10);                                // if remainder is 0 blink 10 times
           programming_mode_step = 4;
           break;
         }
         case 4:
         {
           if(!ISBLINKING_REDLED) {
-            Timeout_SetTimeout2(1000);
+            Timeout_SetTimeout2(1100);
             programming_mode_step = 5;
           }
           break;
@@ -302,7 +346,7 @@ void BTN1_Released()
   {
     if(FLAG_programming_mode) {
       FLAG_programming_mode = FALSE;
-      Program_Timer_Value();
+      //Program_Timer_Value();
     }
     else {
       FLAG_programming_mode = TRUE;
@@ -314,15 +358,32 @@ void BTN1_Released()
 void Program_Timer_Value()
 {
   u16 tmp_adr;
-  FLASH_Unlock(FLASH_MemType_Program);
-  FLASH_ProgramByte( (u16)(&timer_val_stored)+0, (u8)(timer_value >> 8) );
-  FLASH_ProgramByte( (u16)(&timer_val_stored)+1, (u8)(timer_value & (u16)0x00FF) );
-  FLASH_Lock(FLASH_MemType_Program);
-  /* Check what was written */
-  tmp_adr = (u16)&timer_val_stored;
-  if( timer_value != READROM_U16(tmp_adr) )
-  {
-    Errors_SetError(ERROR_FLASH_WRITE);
+  u16 timer_value_sec;
+  timer_value_sec = timer_value * 60; // convert to seconds, the user selected value in timer_value is in minutes
+  if(!Errors_CheckError(ERROR_FLASH_WRITE)) {
+    tmp_adr = (u16)&(timer_val_stored[ROM_location_timer_idx]);
+    FLASH_Unlock(FLASH_MemType_Program);
+    // Clear old timer value position
+    FLASH_ProgramByte( (u16)(tmp_adr)+0, (u8)0x00 );
+    FLASH_ProgramByte( (u16)(tmp_adr)+1, (u8)0x00 );
+    if(READROM_U16(tmp_adr) != 0) {
+      Errors_SetError(ERROR_FLASH_WRITE);
+    }
+    ROM_location_timer_idx++;
+    if(ROM_location_timer_idx >= ROM_LOCATIONS_TIMER) {
+      ROM_location_timer_idx = 0;
+    }
+    tmp_adr = (u16)&(timer_val_stored[ROM_location_timer_idx]);
+    // Write next location with new user data
+    FLASH_ProgramByte( (u16)(tmp_adr)+0, (u8)(timer_value_sec >> 8) );
+    FLASH_ProgramByte( (u16)(tmp_adr)+1, (u8)(timer_value_sec & (u16)0x00FF) );
+    FLASH_Lock(FLASH_MemType_Program);
+    // Check what was written
+    if(READROM_U16(tmp_adr) != timer_value_sec) {
+      Errors_SetError(ERROR_FLASH_WRITE);
+    }
+    BLINK_GREENLED(1);
+    while(ISBLINKING_GREENLED);
   }
 }
 #ifdef  USE_FULL_ASSERT
