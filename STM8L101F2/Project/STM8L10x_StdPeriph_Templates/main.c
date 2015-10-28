@@ -143,7 +143,15 @@ void main(void)
     TimerSwitch_StateMachine();
     Programming_Mode_Manager();
     Task_1000ms();
-    Error_Handler();
+    //Error_Handler();
+    if(!ISBLINKING_REDLED && !ISBLINKING_GREENLED && !FLAG_programming_mode) {
+      if(LoadState == LOAD_POWERED) {
+        LED_GREEN_ON;  
+      }
+      else {
+        LED_OFF; 
+      }
+    }
     IWDG_ReloadCounter();
   }
 }
@@ -154,11 +162,9 @@ void Error_Handler()
     BLINK_REDLED(255);
     FLAG_reset_LEDblink_error = TRUE;
   }
-  else {
-    if(FLAG_reset_LEDblink_error) {
-      BLINKSTOP_REDLED;
-      FLAG_reset_LEDblink_error = FALSE;
-    }
+  else if(!Errors_IsError() && FLAG_reset_LEDblink_error) {
+    BLINKSTOP_REDLED;
+    FLAG_reset_LEDblink_error = FALSE;
   }
 }
 
@@ -236,15 +242,13 @@ void TimerSwitch_StateMachine()
     case ST_SWITCH_LOAD: {
       switch(LoadStateRequest) {
         case LOAD_NOT_POWERED: {
-          LED_OFF;
           LOAD_OFF;
           LoadState = LOAD_NOT_POWERED;
-		  FLAG_timer_on = FALSE;
+		      FLAG_timer_on = FALSE;
           timer_cnt_seconds = 0;
           break;
         }
         case LOAD_POWERED: {
-          LED_GREEN_ON;
           LOAD_ON;
           LoadState = LOAD_POWERED;
           FLAG_timer_on = TRUE;
@@ -285,9 +289,6 @@ void Button_Press_Manager()
       FLAG_programming_mode = FALSE;
       BLINKSTOP_REDLED;
       Program_Timer_Value();
-      if(LoadState = LOAD_POWERED) {
-        LED_GREEN_ON;  
-      }
     }
     else {
       FLAG_programming_mode = TRUE;
@@ -355,7 +356,6 @@ void Program_Timer_Value()
         Errors_SetError(ERROR_FLASH_WRITE);
       }
       BLINK_GREENLED(2);
-      while(ISBLINKING_GREENLED);
     }
   }
 }
