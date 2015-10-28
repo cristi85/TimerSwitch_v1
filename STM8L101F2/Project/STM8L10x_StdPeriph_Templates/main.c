@@ -30,6 +30,8 @@
 #include "stm8l10x_it.h"
 #include "timeout.h"
 #include "rtms.h"
+
+#define  USE_FULL_ASSERT
 /** @addtogroup STM8L15x_StdPeriph_Template
   * @{
   */
@@ -162,6 +164,8 @@ void Error_Handler()
 
 void Retrieve_Check_ROM_Timer_Val()
 {
+  u8 cnt, i;
+  u16 tmp_adr;
   /* Retrieve Timer Stored value index */
   cnt = 0;
   for(i=0; i<ROM_LOCATIONS_TIMER; i++) {
@@ -208,6 +212,7 @@ void Task_1000ms()
 
 void TimerSwitch_StateMachine()
 {
+  u16 tmp_adr;
   switch(state) {
     case ST_INIT: {
       state = ST_WAIT_INPUT;
@@ -223,8 +228,6 @@ void TimerSwitch_StateMachine()
       }
       if( timer_cnt_seconds >= READROM_U16(tmp_adr) )
       {
-        FLAG_timer_on = FALSE;
-        timer_cnt_seconds = 0;
         LoadStateRequest = LOAD_NOT_POWERED;
         state = ST_WAIT_CAP_CHARGE;
       }
@@ -236,6 +239,8 @@ void TimerSwitch_StateMachine()
           LED_OFF;
           LOAD_OFF;
           LoadState = LOAD_NOT_POWERED;
+		  FLAG_timer_on = FALSE;
+          timer_cnt_seconds = 0;
           break;
         }
         case LOAD_POWERED: {
@@ -277,8 +282,12 @@ void Button_Press_Manager()
     FLAG_BTN1_long_lock = TRUE;
     // button long press
     if(FLAG_programming_mode) {
-    FLAG_programming_mode = FALSE;
-    //Program_Timer_Value();
+      FLAG_programming_mode = FALSE;
+      BLINKSTOP_REDLED;
+      Program_Timer_Value();
+      if(LoadState = LOAD_POWERED) {
+        LED_GREEN_ON;  
+      }
     }
     else {
       FLAG_programming_mode = TRUE;
@@ -293,6 +302,7 @@ void Button_Press_Manager()
     if(FLAG_BTN1_long_lock) {
       // release button after a long press
       FLAG_BTN1_long_lock = FALSE;
+      FLAG_BTN1_lock = FALSE;
     }
     else {
       // release button after a short press
@@ -301,8 +311,15 @@ void Button_Press_Manager()
         if(timer_value < 99) timer_value++;
       }
       else {
-        LoadStateRequest = LOAD_POWERED;
-        state = ST_WAIT_CAP_CHARGE;
+        if(LoadState == LOAD_NOT_POWERED) {
+          LoadStateRequest = LOAD_POWERED;  
+		      state = ST_WAIT_CAP_CHARGE;
+        }
+        else {
+          LoadStateRequest = LOAD_NOT_POWERED;
+          state = ST_WAIT_CAP_CHARGE;
+        }
+        
       }
     }
   }
@@ -315,28 +332,31 @@ void Program_Timer_Value()
   timer_value_sec = timer_value * 60; // convert to seconds, the user selected value in timer_value is in minutes
   if(!Errors_CheckError(ERROR_FLASH_WRITE)) {
     tmp_adr = (u16)&(timer_val_stored[ROM_location_timer_idx]);
-    FLASH_Unlock(FLASH_MemType_Program);
-    // Clear old timer value position
-    FLASH_ProgramByte( (u16)(tmp_adr)+0, (u8)0x00 );
-    FLASH_ProgramByte( (u16)(tmp_adr)+1, (u8)0x00 );
-    if(READROM_U16(tmp_adr) != 0) {
-      Errors_SetError(ERROR_FLASH_WRITE);
+    if(timer_value_sec != READROM_U16(tmp_adr))
+    {
+      FLASH_Unlock(FLASH_MemType_Program);
+      // Clear old timer value position
+      FLASH_ProgramByte( (u16)(tmp_adr)+0, (u8)0x00 );
+      FLASH_ProgramByte( (u16)(tmp_adr)+1, (u8)0x00 );
+      if(READROM_U16(tmp_adr) != 0) {
+        Errors_SetError(ERROR_FLASH_WRITE);
+      }
+      ROM_location_timer_idx++;
+      if(ROM_location_timer_idx >= ROM_LOCATIONS_TIMER) {
+        ROM_location_timer_idx = 0;
+      }
+      tmp_adr = (u16)&(timer_val_stored[ROM_location_timer_idx]);
+      // Write next location with new user data
+      FLASH_ProgramByte( (u16)(tmp_adr)+0, (u8)(timer_value_sec >> 8) );
+      FLASH_ProgramByte( (u16)(tmp_adr)+1, (u8)(timer_value_sec & (u16)0x00FF) );
+      FLASH_Lock(FLASH_MemType_Program);
+      // Check what was written
+      if(READROM_U16(tmp_adr) != timer_value_sec) {
+        Errors_SetError(ERROR_FLASH_WRITE);
+      }
+      BLINK_GREENLED(2);
+      while(ISBLINKING_GREENLED);
     }
-    ROM_location_timer_idx++;
-    if(ROM_location_timer_idx >= ROM_LOCATIONS_TIMER) {
-      ROM_location_timer_idx = 0;
-    }
-    tmp_adr = (u16)&(timer_val_stored[ROM_location_timer_idx]);
-    // Write next location with new user data
-    FLASH_ProgramByte( (u16)(tmp_adr)+0, (u8)(timer_value_sec >> 8) );
-    FLASH_ProgramByte( (u16)(tmp_adr)+1, (u8)(timer_value_sec & (u16)0x00FF) );
-    FLASH_Lock(FLASH_MemType_Program);
-    // Check what was written
-    if(READROM_U16(tmp_adr) != timer_value_sec) {
-      Errors_SetError(ERROR_FLASH_WRITE);
-    }
-    BLINK_GREENLED(1);
-    while(ISBLINKING_GREENLED);
   }
 }
 
@@ -357,8 +377,7 @@ void Programming_Mode_Manager()
         programming_mode_step = 1;
         break;
       }
-      case 1:
-      {
+      case 1: {
         if(!ISBLINKING_REDLED) {
           if(timer_value < 10) {
             Timeout_SetTimeout2(1100);
@@ -371,30 +390,30 @@ void Programming_Mode_Manager()
         }
         break;
       }
-      case 2:
-      {
+      case 2: {
         if(Timeout_IsTimeout2()) {
           programming_mode_step = 3;
         }
         break;
       }
-      case 3:
-      {
-        if(timer_value % 10) BLINK_REDLED(timer_value % 10);  // remainder is different than 0
-        else BLINK_REDLED(10);                                // if remainder is 0 blink 10 times
+      case 3: {
+        if(timer_value % 10) {
+          BLINK_REDLED(timer_value % 10);  // remainder is different than 0
+        }
+        else { 
+          BLINK_REDLED(10);                                // if remainder is 0 blink 10 times
+        }
         programming_mode_step = 4;
         break;
       }
-      case 4:
-      {
+      case 4: {
         if(!ISBLINKING_REDLED) {
           Timeout_SetTimeout2(1100);
           programming_mode_step = 5;
         }
         break;
       }
-      case 5:
-      {
+      case 5: {
         if(Timeout_IsTimeout2()) {
           programming_mode_step = 0;
         }

@@ -1,0 +1,5 @@
+blink red led continuously when error, do not allow other part of application to overwrite led command
+
+- implement double click, when double click the load is powered on continuously, the load is not unpowered when the timer expires
+  - when continuous load operation is selected by double click, green led is steady on
+  - when timed load operation is selected by single click, the green led blinks
