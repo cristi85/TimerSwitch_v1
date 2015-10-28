@@ -67,6 +67,7 @@ typedef enum States
 static u8 LoadStateRequest = LOAD_NOT_POWERED;
 static u8 LoadState = LOAD_NOT_POWERED;
 static _Bool FLAG_BTN1_lock = FALSE;
+static _Bool FLAG_BTN1_long_lock = FALSE;
 static _Bool FLAG_reset_LEDblink_error = FALSE;
 static _Bool FLAG_programming_mode = FALSE;
 static u8 programming_mode_step = 0;
@@ -80,8 +81,12 @@ static const u16 timer_val_stored_default = TIMER_VAL_DEFAULT;
 static u8 ROM_location_timer_idx = 0;
 /* Private function prototypes -----------------------------------------------*/
 /* Private functions ---------------------------------------------------------*/
-void BTN1_Released(void);
-
+void Retrieve_Check_ROM_Timer_Val(void);
+void Error_Handler(void);
+void Task_1000ms(void);
+void TimerSwitch_StateMachine(void);
+void Button_Press_Manager(void);
+void Programming_Mode_Manager(void);
 void Program_Timer_Value(void);
 // RUNTIME MEASUREMENT
 RTMS_DECLARE(runtime_it_1ms);
@@ -100,10 +105,12 @@ void main(void)
   RTMS_INIT(runtime_it_1ms);
   enableInterrupts();
   LED_GREEN_ON;
-  /* Wait for power supply settling */
+  // Wait for power supply settling
   Timeout_SetTimeout2(200);
   while(!Timeout_IsTimeout2());
+  // END Wait for power supply settling
   LED_OFF;
+  // Handle RESET flags
   if(RST_GetFlagStatus(RST_FLAG_IWDGF)) {
     BLINK_REDLED(1);
   }
@@ -112,8 +119,49 @@ void main(void)
   }
   RST_ClearFlag(RST_FLAG_POR_PDR | RST_FLAG_SWIMF | RST_FLAG_ILLOPF | RST_FLAG_IWDGF);
   while(ISBLINKING_REDLED);
+  // END Handle RESET flags
   HBRIDGE_OFF;
   Timeout_SetTimeout1(HBRIDGE_CHARGE_TIME);
+  Retrieve_Check_ROM_Timer_Val();
+  while(!Timeout_IsTimeout1());
+  LOAD_OFF;
+  Timeout_SetTimeout1(HBRIDGE_ON_TIME);
+  while(!Timeout_IsTimeout1());
+  HBRIDGE_OFF;
+  Timeout_SetTimeout1(HBRIDGE_CHARGE_TIME);
+  
+  IWDG_Enable();
+  IWDG_WriteAccessCmd(IWDG_WriteAccess_Enable);
+  IWDG_SetPrescaler(IWDG_Prescaler_64);  /* 431.15ms for RL[7:0]= 0xFF */
+  IWDG_SetReload(0xFF);
+  IWDG_WriteAccessCmd(IWDG_WriteAccess_Disable);
+  IWDG_ReloadCounter();
+  while (1)
+  {
+    TimerSwitch_StateMachine();
+    Programming_Mode_Manager();
+    Task_1000ms();
+    Error_Handler();
+    IWDG_ReloadCounter();
+  }
+}
+
+void Error_Handler()
+{
+  if(Errors_IsError() && !FLAG_reset_LEDblink_error) {
+    BLINK_REDLED(255);
+    FLAG_reset_LEDblink_error = TRUE;
+  }
+  else {
+    if(FLAG_reset_LEDblink_error) {
+      BLINKSTOP_REDLED;
+      FLAG_reset_LEDblink_error = FALSE;
+    }
+  }
+}
+
+void Retrieve_Check_ROM_Timer_Val()
+{
   /* Retrieve Timer Stored value index */
   cnt = 0;
   for(i=0; i<ROM_LOCATIONS_TIMER; i++) {
@@ -147,210 +195,115 @@ void main(void)
     while(ISBLINKING_GREENLED);
   }
   /* END Retrieve Timer Stored value index */
-  while(!Timeout_IsTimeout1());
-  LOAD_OFF;
-  Timeout_SetTimeout1(HBRIDGE_ON_TIME);
-  while(!Timeout_IsTimeout1());
-  HBRIDGE_OFF;
-  Timeout_SetTimeout1(HBRIDGE_CHARGE_TIME);
-  
-  IWDG_Enable();
-  IWDG_WriteAccessCmd(IWDG_WriteAccess_Enable);
-  IWDG_SetPrescaler(IWDG_Prescaler_64);  /* 431.15ms for RL[7:0]= 0xFF */
-  IWDG_SetReload(0xFF);
-  IWDG_WriteAccessCmd(IWDG_WriteAccess_Disable);
-  IWDG_ReloadCounter();
-  while (1)
-  {
-    switch(state)
-    {
-      case ST_INIT:
-      {
-        state = ST_WAIT_INPUT;
-        break;
-      }
-      case ST_WAIT_INPUT:
-      {
-        
-        /* ============== PRESS BTN1 with key repetition lock ================= */
-        if(BTN1_DEB_STATE == BTN_PRESSED && !FLAG_BTN1_lock)
-        {
-          FLAG_BTN1_lock = TRUE;
-        }
-        if(BTN1_DEB_STATE == BTN_DEPRESSED && FLAG_BTN1_lock)
-        {
-          FLAG_BTN1_lock = FALSE;
-          BTN1_Released();
-        }
-        /* ============== END PRESS BTN1 with key repetition lock ================= */
-        
-        if(!Errors_CheckError(ERROR_FLASH_WRITE)) {
-          tmp_adr = (u16)&(timer_val_stored[ROM_location_timer_idx]);
-        }
-        else {
-          tmp_adr = (u16)&(timer_val_stored_default);
-        }
-        if( timer_cnt_seconds >= READROM_U16(tmp_adr) )
-        {
-          FLAG_timer_on = FALSE;
-          timer_cnt_seconds = 0;
-          LoadStateRequest = LOAD_NOT_POWERED;
-          state = ST_WAIT_CAP_CHARGE;
-        }
-        break;
-      }
-      case ST_SWITCH_LOAD:
-      {
-        switch(LoadStateRequest)
-        {
-          case LOAD_NOT_POWERED:
-          {
-            LED_OFF;
-            LOAD_OFF;
-            LoadState = LOAD_NOT_POWERED;
-            break;
-          }
-          case LOAD_POWERED:
-          {
-            LED_GREEN_ON;
-            LOAD_ON;
-            LoadState = LOAD_POWERED;
-            FLAG_timer_on = TRUE;
-            timer_cnt_seconds = 0;
-            break;
-          }
-          default: break;
-        }
-        Timeout_SetTimeout1(HBRIDGE_ON_TIME);  /* set timeout for H-Bridge ON */
-        state = ST_WAIT_HBRIDGE_ON;
-        break;
-      }
-      case ST_WAIT_CAP_CHARGE:
-      {
-        if(Timeout_IsTimeout1())
-        {
-          state = ST_SWITCH_LOAD;
-        }
-        break;
-      }
-      case ST_WAIT_HBRIDGE_ON:
-      {
-        if(Timeout_IsTimeout1())
-        {
-          HBRIDGE_OFF;
-          /* set timeout for H-Bridge capacitor to charge */
-          Timeout_SetTimeout1(HBRIDGE_CHARGE_TIME);
-          state = ST_WAIT_INPUT;
-        }
-        break;
-      }
-      default: break;
+}
+
+void Task_1000ms()
+{
+  if(FLAG_1000ms) {
+    FLAG_1000ms = FALSE;
+    task_1000ms_cnt++;
+    if(FLAG_timer_on) timer_cnt_seconds++;
+  }
+}
+
+void TimerSwitch_StateMachine()
+{
+  switch(state) {
+    case ST_INIT: {
+      state = ST_WAIT_INPUT;
+      break;
     }
-    if(FLAG_programming_mode)
-    {
-      switch(programming_mode_step)
+    case ST_WAIT_INPUT: {
+      Button_Press_Manager();
+      if(!Errors_CheckError(ERROR_FLASH_WRITE)) {
+        tmp_adr = (u16)&(timer_val_stored[ROM_location_timer_idx]);
+      }
+      else {
+        tmp_adr = (u16)&(timer_val_stored_default);
+      }
+      if( timer_cnt_seconds >= READROM_U16(tmp_adr) )
       {
-        case 0:
-        {
-          if(timer_value < 10) {
-            BLINK_REDLED(timer_value);
-          }
-          else if(timer_value < 100) {
-            BLINK_REDLED(timer_value / 10);            
-          }
-          programming_mode_step = 1;
+        FLAG_timer_on = FALSE;
+        timer_cnt_seconds = 0;
+        LoadStateRequest = LOAD_NOT_POWERED;
+        state = ST_WAIT_CAP_CHARGE;
+      }
+      break;
+    }
+    case ST_SWITCH_LOAD: {
+      switch(LoadStateRequest) {
+        case LOAD_NOT_POWERED: {
+          LED_OFF;
+          LOAD_OFF;
+          LoadState = LOAD_NOT_POWERED;
           break;
         }
-        case 1:
-        {
-          if(!ISBLINKING_REDLED) {
-            if(timer_value < 10) {
-              Timeout_SetTimeout2(1100);
-              programming_mode_step = 5;
-            }
-            else if(timer_value < 100) {
-              Timeout_SetTimeout2(650);
-              programming_mode_step = 2;
-            }
-          }
-          break;
-        }
-        case 2:
-        {
-          if(Timeout_IsTimeout2()) {
-            programming_mode_step = 3;
-          }
-          break;
-        }
-        case 3:
-        {
-          if(timer_value % 10) BLINK_REDLED(timer_value % 10);  // remainder is different than 0
-          else BLINK_REDLED(10);                                // if remainder is 0 blink 10 times
-          programming_mode_step = 4;
-          break;
-        }
-        case 4:
-        {
-          if(!ISBLINKING_REDLED) {
-            Timeout_SetTimeout2(1100);
-            programming_mode_step = 5;
-          }
-          break;
-        }
-        case 5:
-        {
-          if(Timeout_IsTimeout2()) {
-            programming_mode_step = 0;
-          }
+        case LOAD_POWERED: {
+          LED_GREEN_ON;
+          LOAD_ON;
+          LoadState = LOAD_POWERED;
+          FLAG_timer_on = TRUE;
+          timer_cnt_seconds = 0;
           break;
         }
         default: break;
       }
+      Timeout_SetTimeout1(HBRIDGE_ON_TIME);  /* set timeout for H-Bridge ON */
+      state = ST_WAIT_HBRIDGE_ON;
+      break;
     }
-    if(FLAG_1000ms)
-    {
-      FLAG_1000ms = FALSE;
-      task_1000ms_cnt++;
-      if(FLAG_timer_on) timer_cnt_seconds++;
-    }
-    IWDG_ReloadCounter();
-    if(Errors_IsError() && !FLAG_reset_LEDblink_error)
-    {
-      BLINK_REDLED(255);
-      FLAG_reset_LEDblink_error = TRUE;
-    }
-    else 
-    {
-      if(FLAG_reset_LEDblink_error)
-      {
-        BLINKSTOP_REDLED;
-        FLAG_reset_LEDblink_error = FALSE;
+    case ST_WAIT_CAP_CHARGE: {
+      if(Timeout_IsTimeout1()) {
+        state = ST_SWITCH_LOAD;
       }
+      break;
     }
+    case ST_WAIT_HBRIDGE_ON: {
+      if(Timeout_IsTimeout1()) {
+        HBRIDGE_OFF;
+        /* set timeout for H-Bridge capacitor to charge */
+        Timeout_SetTimeout1(HBRIDGE_CHARGE_TIME);
+        state = ST_WAIT_INPUT;
+      }
+      break;
+    }
+    default: break;
   }
 }
 
-void BTN1_Released()
+void Button_Press_Manager()
 {
-  if(BTN1_press_timer < BTN1_SET_NEW_TIME)
-  {
+  if(BTN1_DEB_STATE==BTN_PRESSED && BTN1_press_timer>=BTN1_SET_NEW_TIME && !FLAG_BTN1_long_lock) {
+    FLAG_BTN1_long_lock = TRUE;
+    // button long press
     if(FLAG_programming_mode) {
-      if(timer_value < 99) timer_value++;
-    }
-    else {
-      LoadStateRequest = LOAD_POWERED;
-      state = ST_WAIT_CAP_CHARGE;
-    }
-  }
-  else
-  {
-    if(FLAG_programming_mode) {
-      FLAG_programming_mode = FALSE;
-      //Program_Timer_Value();
+    FLAG_programming_mode = FALSE;
+    //Program_Timer_Value();
     }
     else {
       FLAG_programming_mode = TRUE;
       timer_value = TIMER_VAL_PROGRAMMING_START;
+    }
+  }
+  if(BTN1_DEB_STATE == BTN_PRESSED && !FLAG_BTN1_lock) {
+    FLAG_BTN1_lock = TRUE;
+    //button short press
+  }
+  if(BTN1_DEB_STATE == BTN_DEPRESSED && FLAG_BTN1_lock) {
+    if(FLAG_BTN1_long_lock) {
+      // release button after a long press
+      FLAG_BTN1_long_lock = FALSE;
+    }
+    else {
+      // release button after a short press
+      FLAG_BTN1_lock = FALSE;
+      if(FLAG_programming_mode) {
+        if(timer_value < 99) timer_value++;
+      }
+      else {
+        LoadStateRequest = LOAD_POWERED;
+        state = ST_WAIT_CAP_CHARGE;
+      }
     }
   }
 }
@@ -384,6 +337,71 @@ void Program_Timer_Value()
     }
     BLINK_GREENLED(1);
     while(ISBLINKING_GREENLED);
+  }
+}
+
+void Programming_Mode_Manager()
+{
+  if(FLAG_programming_mode)
+  {
+    switch(programming_mode_step)
+    {
+      case 0:
+      {
+        if(timer_value < 10) {
+          BLINK_REDLED(timer_value);
+        }
+        else if(timer_value < 100) {
+          BLINK_REDLED(timer_value / 10);            
+        }
+        programming_mode_step = 1;
+        break;
+      }
+      case 1:
+      {
+        if(!ISBLINKING_REDLED) {
+          if(timer_value < 10) {
+            Timeout_SetTimeout2(1100);
+            programming_mode_step = 5;
+          }
+          else if(timer_value < 100) {
+            Timeout_SetTimeout2(650);
+            programming_mode_step = 2;
+          }
+        }
+        break;
+      }
+      case 2:
+      {
+        if(Timeout_IsTimeout2()) {
+          programming_mode_step = 3;
+        }
+        break;
+      }
+      case 3:
+      {
+        if(timer_value % 10) BLINK_REDLED(timer_value % 10);  // remainder is different than 0
+        else BLINK_REDLED(10);                                // if remainder is 0 blink 10 times
+        programming_mode_step = 4;
+        break;
+      }
+      case 4:
+      {
+        if(!ISBLINKING_REDLED) {
+          Timeout_SetTimeout2(1100);
+          programming_mode_step = 5;
+        }
+        break;
+      }
+      case 5:
+      {
+        if(Timeout_IsTimeout2()) {
+          programming_mode_step = 0;
+        }
+        break;
+      }
+      default: break;
+    }
   }
 }
 #ifdef  USE_FULL_ASSERT
