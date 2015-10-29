@@ -143,8 +143,8 @@ void main(void)
     TimerSwitch_StateMachine();
     Programming_Mode_Manager();
     Task_1000ms();
-    //Error_Handler();
-    if(!ISBLINKING_REDLED && !ISBLINKING_GREENLED && !FLAG_programming_mode) {
+    Error_Handler();
+    if(!ISBLINKING_REDLED && !ISBLINKING_GREENLED && !FLAG_programming_mode && !Errors_IsError()) {
       if(LoadState == LOAD_POWERED) {
         LED_GREEN_ON;  
       }
@@ -244,7 +244,7 @@ void TimerSwitch_StateMachine()
         case LOAD_NOT_POWERED: {
           LOAD_OFF;
           LoadState = LOAD_NOT_POWERED;
-		      FLAG_timer_on = FALSE;
+          FLAG_timer_on = FALSE;
           timer_cnt_seconds = 0;
           break;
         }
@@ -257,7 +257,7 @@ void TimerSwitch_StateMachine()
         }
         default: break;
       }
-      Timeout_SetTimeout1(HBRIDGE_ON_TIME);  /* set timeout for H-Bridge ON */
+      Timeout_SetTimeout1(HBRIDGE_ON_TIME);  // set timeout for H-Bridge ON
       state = ST_WAIT_HBRIDGE_ON;
       break;
     }
@@ -270,8 +270,7 @@ void TimerSwitch_StateMachine()
     case ST_WAIT_HBRIDGE_ON: {
       if(Timeout_IsTimeout1()) {
         HBRIDGE_OFF;
-        /* set timeout for H-Bridge capacitor to charge */
-        Timeout_SetTimeout1(HBRIDGE_CHARGE_TIME);
+        Timeout_SetTimeout1(HBRIDGE_CHARGE_TIME);  // set timeout for H-Bridge capacitor to charge
         state = ST_WAIT_INPUT;
       }
       break;
@@ -291,8 +290,10 @@ void Button_Press_Manager()
       Program_Timer_Value();
     }
     else {
-      FLAG_programming_mode = TRUE;
-      timer_value = TIMER_VAL_PROGRAMMING_START;
+      if(!Errors_IsError()) {
+        FLAG_programming_mode = TRUE;
+        timer_value = TIMER_VAL_PROGRAMMING_START;
+      }
     }
   }
   if(BTN1_DEB_STATE == BTN_PRESSED && !FLAG_BTN1_lock) {
