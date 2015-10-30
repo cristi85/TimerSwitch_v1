@@ -52,14 +52,13 @@ u16 BTN1_press_timer = 0;
 extern _Bool Timeout_istout1;
 extern _Bool Timeout_istout2;
 extern _Bool Timeout_istout3;
+extern _Bool Timeout_istout3active;
 extern u16 Timeout_toutcnt1;
 extern u16 Timeout_toutcnt2;
 extern u16 Timeout_toutcnt3;
 extern u16 Timeout_tout1;
 extern u16 Timeout_tout2;
 extern u16 Timeout_tout3;
-static volatile u8 interrupt_status;
-volatile u8 debug = 0;
 
 /* LED Blink */
 #define LEDBLINK_ONTIME  (u16)50
@@ -141,6 +140,11 @@ INTERRUPT_HANDLER(TIM4_UPD_OVF_IRQHandler, 25)
     {
       Timeout_toutcnt2++;
       if(Timeout_toutcnt2 >= Timeout_tout2) Timeout_istout2 = TRUE;
+    }
+    if(!Timeout_istout3)
+    {
+      Timeout_toutcnt3++;
+      if(Timeout_toutcnt3 >= Timeout_tout3) Timeout_istout3 = TRUE;
     }
     /* ========== DEBOUNCE INPUTS ========== 1MS */
     /* Debounce BTN1 */
