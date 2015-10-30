@@ -55,7 +55,7 @@ ptn_Child44=Bar-43
 
 [WorkState_v1_2.DockState.Bar-0]
 BarID=59419
-Bars=22
+Bars=28
 Bar#0=0
 Bar#1=32768
 Bar#2=0
@@ -78,6 +78,12 @@ Bar#18=124938
 Bar#19=0
 Bar#20=0
 Bar#21=0
+Bar#22=0
+Bar#23=0
+Bar#24=0
+Bar#25=0
+Bar#26=0
+Bar#27=0
 Style=0
 ExStyle=0
 PrevFloating=False
@@ -1617,7 +1623,7 @@ ptn_Child2=ChildFrames
 
 [WorkState_v1_2.Frames.MainFrame]
 WindowPlacement=MCAAAAAACAAAAAAADAAAAAAAPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPOFCAAAAABEAAAAAALAGAAAAAAOCAAAAA
-Title=ST Visual Develop - project.stw - [config.c]
+Title=ST Visual Develop - project.stw - [main.c]
 
 [WorkState_v1_2.Frames.ChildFrames]
 ptn_Child1=Document-0
@@ -1637,8 +1643,8 @@ ptn_Child1=ViewFrame-0
 DocPathName=..\..\main.c
 DocumentString=
 DocTemplateIndex=0
-WindowPlacement=MCAAAAAAAAAAAAAABAAAAAAAPPPPPPPPPPPPPPPPIPPPPPPPCOPPPPPPIMAAAAAAIMAAAAAAAFFAAAAADICAAAAA
-IsActiveChildFrame=False
+WindowPlacement=MCAAAAAACAAAAAAADAAAAAAAPPPPPPPPPPPPPPPPIPPPPPPPCOPPPPPPIMAAAAAAIMAAAAAAAFFAAAAADICAAAAA
+IsActiveChildFrame=True
 IsFrameVisible=True
 
 [WorkState_v1_2.Frames.ChildFrames.Document-1]
@@ -1681,8 +1687,8 @@ ptn_Child1=ViewFrame-0
 DocPathName=..\..\config.c
 DocumentString=
 DocTemplateIndex=0
-WindowPlacement=MCAAAAAACAAAAAAADAAAAAAAPPPPPPPPPPPPPPPPIPPPPPPPCOPPPPPPJBAAAAAAJBAAAAAAFKEAAAAAINBAAAAA
-IsActiveChildFrame=True
+WindowPlacement=MCAAAAAAAAAAAAAABAAAAAAAPPPPPPPPPPPPPPPPIPPPPPPPCOPPPPPPJBAAAAAAJBAAAAAAFKEAAAAAINBAAAAA
+IsActiveChildFrame=False
 IsFrameVisible=True
 
 [WorkState_v1_2.Frames.ChildFrames.Document-5]

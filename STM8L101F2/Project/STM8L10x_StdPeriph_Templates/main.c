@@ -67,8 +67,7 @@ typedef enum States
   ST_WAIT_INPUT         = 1,
   ST_SWITCH_LOAD        = 2,
   ST_WAIT_CAP_CHARGE    = 3,
-  ST_WAIT_HBRIDGE_ON    = 4,
-  ST_PROGRAMMING_MODE   = 5
+  ST_WAIT_HBRIDGE_ON    = 4
 } StatesType;
 
 /* Private macro -------------------------------------------------------------*/
@@ -201,8 +200,11 @@ void Display_Remaining_Time()
           }
           remaining_time = READROM_U16(tmp_adr) - timer_cnt_seconds;
           remaining_time /= 60;  // convert from seconds to minutes
+          remaining_time++;
           if(remaining_time < 10) {
-            BLINK_GREENLED(remaining_time);
+            if(remaining_time > 0) {
+              BLINK_GREENLED(remaining_time);
+            }
           }
           else if(remaining_time < 100) {
             BLINK_GREENLED(remaining_time / 10);            
@@ -261,7 +263,12 @@ void Display_Remaining_Time()
     }
     else { 
       remaining_time_step = 0;
+      FLAG_disp_rem_time = FALSE;
     }
+  }
+  else {
+    remaining_time_step = 0;
+    FLAG_disp_rem_time = FALSE;
   }
   if(!ISBLINKING_REDLED && !ISBLINKING_GREENLED && !FLAG_programming_mode && !FLAG_disp_rem_time && !Errors_IsError()) {
     if(LoadState == LOAD_POWERED) {
@@ -420,11 +427,13 @@ void Btn1_ShortRelease_Event()
   else {
     if(LoadState == LOAD_NOT_POWERED) {
       FLAG_continuous_load_operation = FALSE;
+      BLINKSTOP_GREENLED;
       LoadStateRequest = LOAD_POWERED;  
       state = ST_WAIT_CAP_CHARGE;
     }
     else {
       FLAG_continuous_load_operation = FALSE;
+      BLINKSTOP_GREENLED;
       LoadStateRequest = LOAD_NOT_POWERED;
       state = ST_WAIT_CAP_CHARGE;
     }
@@ -439,10 +448,12 @@ void Btn1_ShortDoubleClickRelease_Event()
   else {
     if(LoadState == LOAD_NOT_POWERED) {
       FLAG_continuous_load_operation = TRUE;
+      BLINKSTOP_GREENLED;
       LoadStateRequest = LOAD_POWERED;  
       state = ST_WAIT_CAP_CHARGE;
     }
     else {
+      BLINKSTOP_GREENLED;
       LoadStateRequest = LOAD_NOT_POWERED;
       FLAG_continuous_load_operation = FALSE;
       state = ST_WAIT_CAP_CHARGE;
