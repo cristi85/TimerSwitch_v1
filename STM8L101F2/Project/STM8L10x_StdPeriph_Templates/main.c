@@ -50,6 +50,7 @@
 #define BTN1_SET_NEW_TIME           (u16)3000  /* 3000ms */
 #define TIMER_VAL_DEFAULT           (u16)600   /* 600 seconds - 10min*/
 #define TIMER_VAL_PROGRAMMING_START (u16)1     /* 1 minute */
+#define BTN1_DOUBLECLICK_SPEED      (u16)200
 #define READROM_U16(rom_adr)        (u16)(*((u16*)(rom_adr)))
 #define ROM_LOCATIONS_TIMER         (u8)10
 
@@ -70,13 +71,17 @@ static u8 LoadStateRequest = LOAD_NOT_POWERED;
 static u8 LoadState = LOAD_NOT_POWERED;
 static _Bool FLAG_BTN1_lock = FALSE;
 static _Bool FLAG_BTN1_long_lock = FALSE;
-static _Bool FLAG_reset_LEDblink_error = FALSE;
+static _Bool FLAG_reset_LED_error = FALSE;
 static _Bool FLAG_programming_mode = FALSE;
 static u8 programming_mode_step = 0;
+static u8 remaining_time_step = 0;
 static volatile StatesType state = ST_INIT;
 static u8 task_1000ms_cnt = 0;
 static u16 timer_cnt_seconds = 0;
+static u16 remaining_time = 0;
 static _Bool FLAG_timer_on = FALSE;
+static _Bool FLAG_first_click = FALSE;
+static _bool FLAG_continuous_load_operation = FALSE;
 static u16 timer_value = TIMER_VAL_PROGRAMMING_START;
 static const u16 timer_val_stored[ROM_LOCATIONS_TIMER] = {TIMER_VAL_DEFAULT, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 static const u16 timer_val_stored_default = TIMER_VAL_DEFAULT;
@@ -90,6 +95,9 @@ void TimerSwitch_StateMachine(void);
 void Button_Press_Manager(void);
 void Programming_Mode_Manager(void);
 void Program_Timer_Value(void);
+void Btn1_LongPress_Event(void);
+void Btn1_ShortRelease_Event(void);
+void Btn1_ShortDoubleClickRelease_Event(void);
 // RUNTIME MEASUREMENT
 RTMS_DECLARE(runtime_it_1ms);
 /**
@@ -103,6 +111,7 @@ void main(void)
   u16 tmp_adr;
   disableInterrupts();
   Config();
+  HBRIDGE_OFF;
   Errors_Init();
   RTMS_INIT(runtime_it_1ms);
   enableInterrupts();
@@ -122,14 +131,7 @@ void main(void)
   RST_ClearFlag(RST_FLAG_POR_PDR | RST_FLAG_SWIMF | RST_FLAG_ILLOPF | RST_FLAG_IWDGF);
   while(ISBLINKING_REDLED);
   // END Handle RESET flags
-  HBRIDGE_OFF;
-  Timeout_SetTimeout1(HBRIDGE_CHARGE_TIME);
   Retrieve_Check_ROM_Timer_Val();
-  while(!Timeout_IsTimeout1());
-  LOAD_OFF;
-  Timeout_SetTimeout1(HBRIDGE_ON_TIME);
-  while(!Timeout_IsTimeout1());
-  HBRIDGE_OFF;
   Timeout_SetTimeout1(HBRIDGE_CHARGE_TIME);
   
   IWDG_Enable();
@@ -138,33 +140,115 @@ void main(void)
   IWDG_SetReload(0xFF);
   IWDG_WriteAccessCmd(IWDG_WriteAccess_Disable);
   IWDG_ReloadCounter();
+  
+  LoadStateRequest = LOAD_NOT_POWERED;
+  state = ST_WAIT_CAP_CHARGE;
+  
   while (1)
   {
     TimerSwitch_StateMachine();
     Programming_Mode_Manager();
     Task_1000ms();
     Error_Handler();
-    if(!ISBLINKING_REDLED && !ISBLINKING_GREENLED && !FLAG_programming_mode && !Errors_IsError()) {
-      if(LoadState == LOAD_POWERED) {
-        LED_GREEN_ON;  
-      }
-      else {
-        LED_OFF; 
+    Display_Remaining_Time();
+    IWDG_ReloadCounter();
+  }
+}
+
+void Display_Remaining_Time()
+{
+  if(!FLAG_continuous_load_operation) {
+    if(LoadState==LOAD_POWERED && !Errors_IsError()) {
+      switch(remaining_time_step) {
+        case 0: {
+          Timeout_SetTimeout2(5000);
+          remaining_time_step = 1;
+          break;
+        }
+        case 1: {
+          if(Timeout_IsTimeout2()) {
+            remaining_time_step = 2;
+          }
+          break;
+        }
+        case 2: {
+          if(!Errors_CheckError(ERROR_FLASH_WRITE)) {
+            tmp_adr = (u16)&(timer_val_stored[ROM_location_timer_idx]);
+          }
+          else {
+            tmp_adr = (u16)&(timer_val_stored_default);
+          }
+          remaining_time = READROM_U16(tmp_adr) - timer_cnt_seconds;
+          remaining_time /= 60;  // convert from seconds to minutes
+          if(remaining_time < 10) {
+            BLINK_GREENLED(remaining_time);
+          }
+          else if(remaining_time < 100) {
+            BLINK_GREENLED(remaining_time / 10);            
+          }
+          remaining_time_step = 3;
+          break;
+        }
+        case 3: {
+          if(!ISBLINKING_GREENLED) {
+            if(remaining_time < 10) {
+              remaining_time_step = 0;
+            }
+            else if(remaining_time < 100) {
+              Timeout_SetTimeout2(650);
+              remaining_time_step = 4;
+            }
+          }
+          break;
+        }
+        case 4: {
+          if(Timeout_IsTimeout2()) {
+            remaining_time_step = 5;
+          }
+          break;
+        }
+        case 5: {
+          if(remaining_time % 10) {
+            BLINK_GREENLED(remaining_time % 10);  // remainder is different than 0
+          }
+          else { 
+            BLINK_GREENLED(10);                   // if remainder is 0 blink 10 times
+          }
+          remaining_time_step = 6;
+          break;
+        }
+        case 6: {
+          if(!ISBLINKING_GREENLED) {
+            remaining_time_step = 0;
+          }
+          break;
+        }
+        default: break;
       }
     }
-    IWDG_ReloadCounter();
+    else { 
+      remaining_time_step = 0;
+    }
+  }
+  if(!ISBLINKING_REDLED && !ISBLINKING_GREENLED && !FLAG_programming_mode && !Errors_IsError()) {
+    if(LoadState == LOAD_POWERED) {
+      LED_GREEN_ON;  
+    }
+    else {
+      LED_OFF; 
+    }
   }
 }
 
 void Error_Handler()
 {
-  if(Errors_IsError() && !FLAG_reset_LEDblink_error) {
-    BLINK_REDLED(255);
-    FLAG_reset_LEDblink_error = TRUE;
+  if(Errors_IsError() && !FLAG_reset_LED_error) {
+    LED_RED_ON;
+    FLAG_reset_LED_error = TRUE;
   }
-  else if(!Errors_IsError() && FLAG_reset_LEDblink_error) {
-    BLINKSTOP_REDLED;
-    FLAG_reset_LEDblink_error = FALSE;
+  else if(!Errors_IsError() && FLAG_reset_LED_error) {
+    LED_OFF;
+    FLAG_reset_LED_error = FALSE;
   }
 }
 
@@ -232,10 +316,11 @@ void TimerSwitch_StateMachine()
       else {
         tmp_adr = (u16)&(timer_val_stored_default);
       }
-      if( timer_cnt_seconds >= READROM_U16(tmp_adr) )
-      {
-        LoadStateRequest = LOAD_NOT_POWERED;
-        state = ST_WAIT_CAP_CHARGE;
+      if(!FLAG_continuous_load_operation) {
+        if( timer_cnt_seconds >= READROM_U16(tmp_adr) ) {
+          LoadStateRequest = LOAD_NOT_POWERED;
+          state = ST_WAIT_CAP_CHARGE;
+        }
       }
       break;
     }
@@ -251,7 +336,9 @@ void TimerSwitch_StateMachine()
         case LOAD_POWERED: {
           LOAD_ON;
           LoadState = LOAD_POWERED;
-          FLAG_timer_on = TRUE;
+          if(FLAG_continuous_load_operation) {
+            FLAG_timer_on = TRUE;
+          }
           timer_cnt_seconds = 0;
           break;
         }
@@ -279,22 +366,62 @@ void TimerSwitch_StateMachine()
   }
 }
 
+void Btn1_LongPress_Event()
+{
+  if(FLAG_programming_mode) {
+    FLAG_programming_mode = FALSE;
+    BLINKSTOP_REDLED;
+    Program_Timer_Value();
+  }
+  else {
+    if(!Errors_IsError()) {
+      FLAG_programming_mode = TRUE;
+      timer_value = TIMER_VAL_PROGRAMMING_START;
+    }
+  }
+}
+
+void Btn1_ShortRelease_Event()
+{
+  if(FLAG_programming_mode) {
+    if(timer_value < 99) timer_value++;
+  }
+  else {
+    if(LoadState == LOAD_NOT_POWERED) {
+      LoadStateRequest = LOAD_POWERED;  
+      state = ST_WAIT_CAP_CHARGE;
+    }
+    else {
+      LoadStateRequest = LOAD_NOT_POWERED;
+      state = ST_WAIT_CAP_CHARGE;
+    }
+  }
+}
+
+void Btn1_ShortDoubleClickRelease_Event()
+{
+  if(FLAG_programming_mode) {
+    
+  }
+  else {
+    if(LoadState == LOAD_NOT_POWERED) {
+      FLAG_continuous_load_operation = TRUE;
+      LoadStateRequest = LOAD_POWERED;  
+      state = ST_WAIT_CAP_CHARGE;
+    }
+    else {
+      LoadStateRequest = LOAD_NOT_POWERED;
+      state = ST_WAIT_CAP_CHARGE;
+    }
+  }
+}
+
 void Button_Press_Manager()
 {
   if(BTN1_DEB_STATE==BTN_PRESSED && BTN1_press_timer>=BTN1_SET_NEW_TIME && !FLAG_BTN1_long_lock) {
     FLAG_BTN1_long_lock = TRUE;
-    // button long press
-    if(FLAG_programming_mode) {
-      FLAG_programming_mode = FALSE;
-      BLINKSTOP_REDLED;
-      Program_Timer_Value();
-    }
-    else {
-      if(!Errors_IsError()) {
-        FLAG_programming_mode = TRUE;
-        timer_value = TIMER_VAL_PROGRAMMING_START;
-      }
-    }
+    //button long press
+    Btn1_LongPress_Event();
   }
   if(BTN1_DEB_STATE == BTN_PRESSED && !FLAG_BTN1_lock) {
     FLAG_BTN1_lock = TRUE;
@@ -302,27 +429,29 @@ void Button_Press_Manager()
   }
   if(BTN1_DEB_STATE == BTN_DEPRESSED && FLAG_BTN1_lock) {
     if(FLAG_BTN1_long_lock) {
-      // release button after a long press
       FLAG_BTN1_long_lock = FALSE;
       FLAG_BTN1_lock = FALSE;
+      // release button after a long press
     }
     else {
-      // release button after a short press
       FLAG_BTN1_lock = FALSE;
-      if(FLAG_programming_mode) {
-        if(timer_value < 99) timer_value++;
-      }
-      else {
-        if(LoadState == LOAD_NOT_POWERED) {
-          LoadStateRequest = LOAD_POWERED;  
-		      state = ST_WAIT_CAP_CHARGE;
+      // release button after a short press
+      if(!FLAG_programming_mode) {
+        if(!FLAG_first_click) {
+          FLAG_first_click = TRUE;
+          Timeout_SetTimeout3(BTN1_DOUBLECLICK_SPEED);
         }
         else {
-          LoadStateRequest = LOAD_NOT_POWERED;
-          state = ST_WAIT_CAP_CHARGE;
+          FLAG_first_click = FALSE;
+          Btn1_ShortDoubleClickRelease_Event();
         }
-        
       }
+    }
+  }
+  if(!FLAG_programming_mode) {
+    if(FLAG_first_click && Timeout_IsTimeout3()) {
+      FLAG_first_click = FALSE;
+      Btn1_ShortRelease_Event();
     }
   }
 }
