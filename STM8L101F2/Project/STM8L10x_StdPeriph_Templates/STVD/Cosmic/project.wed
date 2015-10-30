@@ -1617,7 +1617,7 @@ ptn_Child2=ChildFrames
 
 [WorkState_v1_2.Frames.MainFrame]
 WindowPlacement=MCAAAAAACAAAAAAADAAAAAAAPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPOFCAAAAABEAAAAAALAGAAAAAAOCAAAAA
-Title=ST Visual Develop - project.stw - [main.c]
+Title=ST Visual Develop - project.stw - [config.c]
 
 [WorkState_v1_2.Frames.ChildFrames]
 ptn_Child1=Document-0
@@ -1637,8 +1637,8 @@ ptn_Child1=ViewFrame-0
 DocPathName=..\..\main.c
 DocumentString=
 DocTemplateIndex=0
-WindowPlacement=MCAAAAAACAAAAAAADAAAAAAAPPPPPPPPPPPPPPPPIPPPPPPPCOPPPPPPIMAAAAAAIMAAAAAAAFFAAAAADICAAAAA
-IsActiveChildFrame=True
+WindowPlacement=MCAAAAAAAAAAAAAABAAAAAAAPPPPPPPPPPPPPPPPIPPPPPPPCOPPPPPPIMAAAAAAIMAAAAAAAFFAAAAADICAAAAA
+IsActiveChildFrame=False
 IsFrameVisible=True
 
 [WorkState_v1_2.Frames.ChildFrames.Document-1]
@@ -1681,8 +1681,8 @@ ptn_Child1=ViewFrame-0
 DocPathName=..\..\config.c
 DocumentString=
 DocTemplateIndex=0
-WindowPlacement=MCAAAAAAAAAAAAAABAAAAAAAPPPPPPPPPPPPPPPPIPPPPPPPCOPPPPPPJBAAAAAAJBAAAAAAFKEAAAAAINBAAAAA
-IsActiveChildFrame=False
+WindowPlacement=MCAAAAAACAAAAAAADAAAAAAAPPPPPPPPPPPPPPPPIPPPPPPPCOPPPPPPJBAAAAAAJBAAAAAAFKEAAAAAINBAAAAA
+IsActiveChildFrame=True
 IsFrameVisible=True
 
 [WorkState_v1_2.Frames.ChildFrames.Document-5]

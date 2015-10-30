@@ -2,7 +2,7 @@
 #include "errors.h"
 
 static u8 error_cnt[ERRORS];
-static const u8 error_cnt_thr[ERRORS] = {1, 1};
+static const u8 error_cnt_thr[ERRORS] = {1};
 static u8 error_state[ERRORS];
 
 void Errors_Init()

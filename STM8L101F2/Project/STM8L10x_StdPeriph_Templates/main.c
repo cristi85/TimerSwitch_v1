@@ -37,22 +37,28 @@
   */
 
 /* Private define ------------------------------------------------------------*/
-#define LOAD_POWERED                (u8)1
-#define LOAD_NOT_POWERED            (u8)0
-#define BLINK_REDLED(x)             {blink_redLED_times=(u8)x;   ((x==255)?(flag_blink_unlimited=TRUE):(flag_blink_unlimited=FALSE)); flag_blink_on_off=TRUE; cnt_state_redLED=0; LED_RED_ON; flag_blink_redLED=TRUE;}
-#define BLINK_GREENLED(x)           {blink_greenLED_times=(u8)x; ((x==255)?(flag_blink_unlimited=TRUE):(flag_blink_unlimited=FALSE)); flag_blink_on_off=TRUE; cnt_state_greenLED=0; LED_GREEN_ON; flag_blink_greenLED=TRUE;}
-#define BLINKSTOP_REDLED            {flag_blink_redLED=FALSE; LED_OFF;}
-#define BLINKSTOP_GREENLED          {flag_blink_greenLED=FALSE; LED_OFF;}
-#define ISBLINKING_REDLED           (flag_blink_redLED)
-#define ISBLINKING_GREENLED         (flag_blink_greenLED)
-#define HBRIDGE_CHARGE_TIME         (u16)1000  /* minimum H-Bridge capacitor charge time [ms] */
-#define HBRIDGE_ON_TIME             (u8)100    /* H-Bridge conduction time [ms] */
-#define BTN1_SET_NEW_TIME           (u16)3000  /* 3000ms */
-#define TIMER_VAL_DEFAULT           (u16)600   /* 600 seconds - 10min*/
-#define TIMER_VAL_PROGRAMMING_START (u16)1     /* 1 minute */
-#define BTN1_DOUBLECLICK_SPEED      (u16)200
-#define READROM_U16(rom_adr)        (u16)(*((u16*)(rom_adr)))
-#define ROM_LOCATIONS_TIMER         (u8)10
+#define LOAD_POWERED                  (u8)1
+#define LOAD_NOT_POWERED              (u8)0
+#define BLINK_REDLED(x)               {blink_redLED_times=(u8)x;   ((x==255)?(flag_blink_unlimited=TRUE):(flag_blink_unlimited=FALSE)); flag_blink_on_off=TRUE; cnt_state_redLED=0; LED_RED_ON; flag_blink_redLED=TRUE;}
+#define BLINK_GREENLED(x)             {blink_greenLED_times=(u8)x; ((x==255)?(flag_blink_unlimited=TRUE):(flag_blink_unlimited=FALSE)); flag_blink_on_off=TRUE; cnt_state_greenLED=0; LED_GREEN_ON; flag_blink_greenLED=TRUE;}
+#define BLINKSTOP_REDLED              {flag_blink_redLED=FALSE; LED_OFF;}
+#define BLINKSTOP_GREENLED            {flag_blink_greenLED=FALSE; LED_OFF;}
+#define ISBLINKING_REDLED             (flag_blink_redLED)
+#define ISBLINKING_GREENLED           (flag_blink_greenLED)
+#define HBRIDGE_CHARGE_TIME           (u16)1000  /* minimum H-Bridge capacitor charge time [ms] */
+#define HBRIDGE_ON_TIME               (u8)100    /* H-Bridge conduction time [ms] */
+#define BTN1_SET_NEW_TIME             (u16)3000  /* 3000ms */
+#define TIMER_VAL_DEFAULT             (u16)600   /* 600 seconds - 10min*/
+#define TIMER_VAL_PROGRAMMING_START   (u16)1     /* 1 minute */
+#define BTN1_DOUBLECLICK_SPEED        (u16)200
+#define TIMER_DISP_REM_TIME_PAUSE_B   (u16)600
+#define TIMER_DISP_REM_TIME_PAUSE_A   (u16)300
+#define TIMER_DISP_REM_TIME           (u16)5000
+#define TIMER_DISP_REM_TIME_INTERCHAR (u16)650
+#define PROG_MODE_VALUE_REP_TIME      (u16)1100
+#define PROG_MODE_VALUE_INTERCHAR     (u16)650
+#define READROM_U16(rom_adr)          (u16)(*((u16*)(rom_adr)))
+#define ROM_LOCATIONS_TIMER           (u8)10
 
 /* Private typedef -----------------------------------------------------------*/
 typedef enum States 
@@ -79,9 +85,11 @@ static volatile StatesType state = ST_INIT;
 static u8 task_1000ms_cnt = 0;
 static u16 timer_cnt_seconds = 0;
 static u16 remaining_time = 0;
+static u16 tmp_adr;
 static _Bool FLAG_timer_on = FALSE;
 static _Bool FLAG_first_click = FALSE;
-static _bool FLAG_continuous_load_operation = FALSE;
+static _Bool FLAG_continuous_load_operation = FALSE;
+static _Bool FLAG_disp_rem_time = FALSE;
 static u16 timer_value = TIMER_VAL_PROGRAMMING_START;
 static const u16 timer_val_stored[ROM_LOCATIONS_TIMER] = {TIMER_VAL_DEFAULT, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 static const u16 timer_val_stored_default = TIMER_VAL_DEFAULT;
@@ -98,6 +106,7 @@ void Program_Timer_Value(void);
 void Btn1_LongPress_Event(void);
 void Btn1_ShortRelease_Event(void);
 void Btn1_ShortDoubleClickRelease_Event(void);
+void Display_Remaining_Time(void);
 // RUNTIME MEASUREMENT
 RTMS_DECLARE(runtime_it_1ms);
 /**
@@ -108,7 +117,6 @@ RTMS_DECLARE(runtime_it_1ms);
 void main(void)
 {
   u8 i, cnt;
-  u16 tmp_adr;
   disableInterrupts();
   Config();
   HBRIDGE_OFF;
@@ -161,7 +169,7 @@ void Display_Remaining_Time()
     if(LoadState==LOAD_POWERED && !Errors_IsError()) {
       switch(remaining_time_step) {
         case 0: {
-          Timeout_SetTimeout2(5000);
+          Timeout_SetTimeout2(TIMER_DISP_REM_TIME);
           remaining_time_step = 1;
           break;
         }
@@ -172,6 +180,19 @@ void Display_Remaining_Time()
           break;
         }
         case 2: {
+          Timeout_SetTimeout2(TIMER_DISP_REM_TIME_PAUSE_B);
+          FLAG_disp_rem_time = TRUE;
+          LED_OFF;
+          remaining_time_step = 3;
+          break;
+        }
+        case 3: {
+          if(Timeout_IsTimeout2()) {
+            remaining_time_step = 4;
+          }
+          break;
+        }
+        case 4: {
           if(!Errors_CheckError(ERROR_FLASH_WRITE)) {
             tmp_adr = (u16)&(timer_val_stored[ROM_location_timer_idx]);
           }
@@ -186,39 +207,51 @@ void Display_Remaining_Time()
           else if(remaining_time < 100) {
             BLINK_GREENLED(remaining_time / 10);            
           }
-          remaining_time_step = 3;
-          break;
-        }
-        case 3: {
-          if(!ISBLINKING_GREENLED) {
-            if(remaining_time < 10) {
-              remaining_time_step = 0;
-            }
-            else if(remaining_time < 100) {
-              Timeout_SetTimeout2(650);
-              remaining_time_step = 4;
-            }
-          }
-          break;
-        }
-        case 4: {
-          if(Timeout_IsTimeout2()) {
-            remaining_time_step = 5;
-          }
+          remaining_time_step = 5;
           break;
         }
         case 5: {
+          if(!ISBLINKING_GREENLED) {
+            if(remaining_time < 10) {
+              remaining_time_step = 9;
+            }
+            else if(remaining_time < 100) {
+              Timeout_SetTimeout2(TIMER_DISP_REM_TIME_INTERCHAR);
+              remaining_time_step = 6;
+            }
+          }
+          break;
+        }
+        case 6: {
+          if(Timeout_IsTimeout2()) {
+            remaining_time_step = 7;
+          }
+          break;
+        }
+        case 7: {
           if(remaining_time % 10) {
             BLINK_GREENLED(remaining_time % 10);  // remainder is different than 0
           }
           else { 
             BLINK_GREENLED(10);                   // if remainder is 0 blink 10 times
           }
-          remaining_time_step = 6;
+          remaining_time_step = 8;
           break;
         }
-        case 6: {
+        case 8: {
           if(!ISBLINKING_GREENLED) {
+            remaining_time_step = 9;
+          }
+          break;
+        }
+        case 9: {
+          Timeout_SetTimeout2(TIMER_DISP_REM_TIME_PAUSE_A);
+          remaining_time_step = 10;
+          break;
+        }
+        case 10: {
+          if(Timeout_IsTimeout2()) {
+            FLAG_disp_rem_time = FALSE;
             remaining_time_step = 0;
           }
           break;
@@ -230,7 +263,7 @@ void Display_Remaining_Time()
       remaining_time_step = 0;
     }
   }
-  if(!ISBLINKING_REDLED && !ISBLINKING_GREENLED && !FLAG_programming_mode && !Errors_IsError()) {
+  if(!ISBLINKING_REDLED && !ISBLINKING_GREENLED && !FLAG_programming_mode && !FLAG_disp_rem_time && !Errors_IsError()) {
     if(LoadState == LOAD_POWERED) {
       LED_GREEN_ON;  
     }
@@ -255,7 +288,6 @@ void Error_Handler()
 void Retrieve_Check_ROM_Timer_Val()
 {
   u8 cnt, i;
-  u16 tmp_adr;
   /* Retrieve Timer Stored value index */
   cnt = 0;
   for(i=0; i<ROM_LOCATIONS_TIMER; i++) {
@@ -302,7 +334,6 @@ void Task_1000ms()
 
 void TimerSwitch_StateMachine()
 {
-  u16 tmp_adr;
   switch(state) {
     case ST_INIT: {
       state = ST_WAIT_INPUT;
@@ -336,7 +367,7 @@ void TimerSwitch_StateMachine()
         case LOAD_POWERED: {
           LOAD_ON;
           LoadState = LOAD_POWERED;
-          if(FLAG_continuous_load_operation) {
+          if(!FLAG_continuous_load_operation) {
             FLAG_timer_on = TRUE;
           }
           timer_cnt_seconds = 0;
@@ -388,10 +419,12 @@ void Btn1_ShortRelease_Event()
   }
   else {
     if(LoadState == LOAD_NOT_POWERED) {
+      FLAG_continuous_load_operation = FALSE;
       LoadStateRequest = LOAD_POWERED;  
       state = ST_WAIT_CAP_CHARGE;
     }
     else {
+      FLAG_continuous_load_operation = FALSE;
       LoadStateRequest = LOAD_NOT_POWERED;
       state = ST_WAIT_CAP_CHARGE;
     }
@@ -411,6 +444,7 @@ void Btn1_ShortDoubleClickRelease_Event()
     }
     else {
       LoadStateRequest = LOAD_NOT_POWERED;
+      FLAG_continuous_load_operation = FALSE;
       state = ST_WAIT_CAP_CHARGE;
     }
   }
@@ -446,6 +480,9 @@ void Button_Press_Manager()
           Btn1_ShortDoubleClickRelease_Event();
         }
       }
+      else {
+        Btn1_ShortRelease_Event();
+      }
     }
   }
   if(!FLAG_programming_mode) {
@@ -458,7 +495,6 @@ void Button_Press_Manager()
 
 void Program_Timer_Value()
 {
-  u16 tmp_adr;
   u16 timer_value_sec;
   timer_value_sec = timer_value * 60; // convert to seconds, the user selected value in timer_value is in minutes
   if(!Errors_CheckError(ERROR_FLASH_WRITE)) {
@@ -510,11 +546,11 @@ void Programming_Mode_Manager()
       case 1: {
         if(!ISBLINKING_REDLED) {
           if(timer_value < 10) {
-            Timeout_SetTimeout2(1100);
+            Timeout_SetTimeout2(PROG_MODE_VALUE_REP_TIME);
             programming_mode_step = 5;
           }
           else if(timer_value < 100) {
-            Timeout_SetTimeout2(650);
+            Timeout_SetTimeout2(PROG_MODE_VALUE_INTERCHAR);
             programming_mode_step = 2;
           }
         }
@@ -538,7 +574,7 @@ void Programming_Mode_Manager()
       }
       case 4: {
         if(!ISBLINKING_REDLED) {
-          Timeout_SetTimeout2(1100);
+          Timeout_SetTimeout2(PROG_MODE_VALUE_REP_TIME);
           programming_mode_step = 5;
         }
         break;
