@@ -47,7 +47,7 @@
 #define ISBLINKING_GREENLED           (flag_blink_greenLED)
 #define HBRIDGE_CHARGE_TIME           (u16)1000  /* minimum H-Bridge capacitor charge time [ms] */
 #define HBRIDGE_ON_TIME               (u8)100    /* H-Bridge conduction time [ms] */
-#define BTN1_SET_NEW_TIME             (u16)3000  /* 3000ms */
+#define BTN1_SET_NEW_TIME             (u16)6000  /* 3000ms */
 #define TIMER_VAL_DEFAULT             (u16)600   /* 600 seconds - 10min*/
 #define TIMER_VAL_PROGRAMMING_START   (u16)1     /* 1 minute */
 #define BTN1_DOUBLECLICK_SPEED        (u16)200
@@ -165,7 +165,7 @@ void main(void)
 void Display_Remaining_Time()
 {
   if(!FLAG_continuous_load_operation) {
-    if(LoadState==LOAD_POWERED && !Errors_IsError()) {
+    if(LoadState==LOAD_POWERED && !Errors_IsError() && !FLAG_programming_mode) {
       switch(remaining_time_step) {
         case 0: {
           Timeout_SetTimeout2(TIMER_DISP_REM_TIME);
@@ -414,6 +414,9 @@ void Btn1_LongPress_Event()
   else {
     if(!Errors_IsError()) {
       FLAG_programming_mode = TRUE;
+      programming_mode_step = 0;
+      BLINKSTOP_GREENLED;
+      remaining_time_step = 0;
       timer_value = TIMER_VAL_PROGRAMMING_START;
     }
   }
@@ -422,7 +425,9 @@ void Btn1_LongPress_Event()
 void Btn1_ShortRelease_Event()
 {
   if(FLAG_programming_mode) {
-    if(timer_value < 99) timer_value++;
+    if(timer_value < 99) {
+      timer_value++;
+    }
   }
   else {
     if(LoadState == LOAD_NOT_POWERED) {
@@ -533,6 +538,9 @@ void Program_Timer_Value()
         Errors_SetError(ERROR_FLASH_WRITE);
       }
       BLINK_GREENLED(2);
+    }
+    else {
+      BLINK_GREENLED(1);
     }
   }
 }
